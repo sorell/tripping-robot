@@ -1,0 +1,31 @@
+
+LINUXPATH=/usr/src/linux/
+
+rt_mod_test-objs:=runtrace.o test/mod_test.o
+obj-m:=rt_mod_test.o
+
+CXX:=$(CC_PREFIX)g++
+AR:=$(CC_PREFIX)ar
+
+
+all: lib test_m test_a
+
+lib:
+	$(CXX) -Wall -O2 -c runtrace.c
+	$(AR) crs runtrace.a runtrace.o
+
+test_a: lib
+	$(CXX) -Wall -O2 -o app_test test/app_test.c runtrace.a -lpthread
+
+clean_test_a:
+	rm -f app_test
+
+test_m:
+	make -C $(LINUXPATH) SUBDIRS=`pwd` ARCH=arm CROSS_COMPILE=$(CC_PREFIX) modules
+	$(CXX) -Wall -O2 -o mod_test_app test/mod_test_app.c -lpthread
+
+clean_test_m:
+	make -C $(LINUXPATH) SUBDIRS=`pwd` clean
+	rm -f mod_test_app
+
+clean: clean_test_m clean_test_a

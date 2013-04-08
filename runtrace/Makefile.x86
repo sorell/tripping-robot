@@ -1,0 +1,26 @@
+
+LINUXPATH=/usr/src/linux/
+
+rt_mod_test-objs:=runtrace.o test/mod_test.o
+obj-m:=rt_mod_test.o
+
+
+all: lib test_m test_a
+
+lib:
+
+test_a:
+	g++ -Wall -O2 -std=c++11 -o app_test test/app_test.c runtrace.c -lpthread
+
+clean_test_a:
+	rm -f app_test
+
+test_m:
+	make -C $(LINUXPATH) SUBDIRS=`pwd` modules
+	g++ -Wall -O2 -o mod_test_app test/mod_test_app.c -lpthread
+
+clean_test_m:
+	make -C $(LINUXPATH) SUBDIRS=`pwd` clean
+	rm -f mod_test_app
+
+clean: clean_test_m clean_test_a
