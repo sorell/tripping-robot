@@ -22,6 +22,10 @@
 /**
  * Access macros for recording tracepoints.
  *
+ * If you're really worried about CPU cycles when creating a tracepoint, you can avoid 
+ * using macros ending in _P. Those macros call vsprintf, ie your message is first printed
+ * and then copied again.
+ * Macros without _P just do normal memcpy for the message string.
 */
 
 #define TP_FILE(msg)  make_tracepoint(__LINE__, __FILE__, msg)
@@ -32,10 +36,10 @@
 
 /**
  * Printing flags.
- *
+ * Used with print_trace_stack() flags argument.
 */
 
-#define RT_PRINT_TIME    0x01  // Print creation timestamp
+#define RT_PRINT_TIME    0x01  // Print tracepoint creation timestamp
 #define RT_PRINT_DIFF    0x02  // Print current tracepoint's time difference to previous tracepoint
 #define RT_PRINT_LINE    0x04  // Print line from where the tracepoint was created
 #define RT_PRINT_SRC     0x08  // Print source file/function from where the tracepoint was created

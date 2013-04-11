@@ -432,7 +432,6 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
 // #ifdef __KERNEL__
 // printk(KERN_ERR "%s: %x, %p, %d, %p\n", __FUNCTION__, flags, dst, size, priv);
 // #endif
-#warning no memcpy needed when printing to a buffer and continuing
 	WRLOCK(print_rwlock);
 	last_tp = ATOMIC_READ(curr_tp);
 	memcpy(tp_pool_copy, tp_pool, tp_pool_mem_size);
@@ -859,7 +858,13 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 		runtrace_init();
 	}
 
-#warning Check if fmt is null
+
+	if (!fmt) {
+		make_tracepoint(line, src, NULL);	
+		return 0;
+	}
+
+
 	while (ATOMIC_TEST_AND_SET(container->in_use)) {
 		container = container->next;
 	}
