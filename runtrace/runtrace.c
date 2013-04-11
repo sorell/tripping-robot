@@ -63,64 +63,64 @@
 
 #ifdef __KERNEL__
 
- #define MALLOC(x)           kmalloc(x, GFP_KERNEL)
- #define FREE(x)             kfree(x)
- #define GETTIMEOFDAY(x)     do_gettimeofday(x)
+ #define MALLOC(x)               kmalloc(x, GFP_KERNEL)
+ #define FREE(x)                 kfree(x)
+ #define GETTIMEOFDAY(x)         do_gettimeofday(x)
  // #define NR_CPUS  This is defined in kernel headers
  
- #define LOCK_DECLARE(x)     DEFINE_RWLOCK(x)
- #define LOCK_INIT(x)        do {} while(0);
- #define LOCK_DESTROY(x)     do {} while(0);
- #define RDLOCK(x)           read_lock(&x)
- #define WRLOCK(x)           write_lock(&x)
- #define RDUNLOCK(x)         read_unlock(&x)
- #define WRUNLOCK(x)         write_unlock(&x)
- 
- #define ATOMIC_VAR(n)       atomic_t n
- #define ATOMIC_SET(x, n)    atomic_set(&x, n)
- #define ATOMIC_READ(x)      atomic_read(&x)
- #define ATOMIC_INC_RET(x)   (atomic_inc_return(&x))
+ #define LOCK_DECLARE(x)         DEFINE_RWLOCK(x)
+ #define LOCK_INIT(x)            do {} while(0);
+ #define LOCK_DESTROY(x)         do {} while(0);
+ #define RDLOCK(x)               read_lock(&x)
+ #define WRLOCK(x)               write_lock(&x)
+ #define RDUNLOCK(x)             read_unlock(&x)
+ #define WRUNLOCK(x)             write_unlock(&x)
 
- #define ATOMIC_FLAG(n)      long int n
+ #define ATOMIC_VAR(n)           atomic_t n
+ #define ATOMIC_SET(x, n)        atomic_set(&x, n)
+ #define ATOMIC_READ(x)          atomic_read(&x)
+ #define ATOMIC_INC_RET(x)       (atomic_inc_return(&x))
+
+ #define ATOMIC_FLAG(n)          long int n
  #define ATOMIC_TEST_AND_SET(x)  test_and_set_bit(0, &x)
- #define ATOMIC_CLEAR(x)     clear_bit(0, &x)
+ #define ATOMIC_CLEAR(x)         clear_bit(0, &x)
 
 #else  // ! __KERNEL__
 
- #define MALLOC(x)           malloc(x)
- #define FREE(x)             free(x)
- #define GETTIMEOFDAY(x)     gettimeofday(x, NULL)
- #define NR_CPUS             sysconf(_SC_NPROCESSORS_ONLN)
- #define u64                 unsigned long long
+ #define MALLOC(x)               malloc(x)
+ #define FREE(x)                 free(x)
+ #define GETTIMEOFDAY(x)         gettimeofday(x, NULL)
+ #define NR_CPUS                 sysconf(_SC_NPROCESSORS_ONLN)
+ #define u64                     unsigned long long
 
- #define LOCK_DECLARE(x)     pthread_rwlock_t x;
- #define LOCK_INIT(x)        pthread_rwlockattr_t x##_attr; \
-                             pthread_rwlockattr_setkind_np(&x##_attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP); \
-                             pthread_rwlock_init(&x, &x##_attr);
- #define LOCK_DESTROY(x)     pthread_rwlock_destroy(&x)
- #define RDLOCK(x)           pthread_rwlock_rdlock(&x)
- #define WRLOCK(x)           pthread_rwlock_wrlock(&x)
- #define RDUNLOCK(x)         pthread_rwlock_unlock(&x)
- #define WRUNLOCK(x)         pthread_rwlock_unlock(&x)
+ #define LOCK_DECLARE(x)         pthread_rwlock_t x;
+ #define LOCK_INIT(x)            { pthread_rwlockattr_t x##_attr; \
+                                 pthread_rwlockattr_setkind_np(&x##_attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP); \
+                                 pthread_rwlock_init(&x, &x##_attr); }
+ #define LOCK_DESTROY(x)         pthread_rwlock_destroy(&x)
+ #define RDLOCK(x)               pthread_rwlock_rdlock(&x)
+ #define WRLOCK(x)               pthread_rwlock_wrlock(&x)
+ #define RDUNLOCK(x)             pthread_rwlock_unlock(&x)
+ #define WRUNLOCK(x)             pthread_rwlock_unlock(&x)
 
  #if defined __cplusplus  &&  defined __GXX_EXPERIMENTAL_CXX0X__
-  #define ATOMIC_VAR(n)       std::atomic<unsigned int> n
-  #define ATOMIC_SET(x, n)    x = n
-  #define ATOMIC_READ(x)      x
-  #define ATOMIC_INC_RET(x)   (x.fetch_add(1) + 1)
+  #define ATOMIC_VAR(n)           std::atomic<unsigned int> n
+  #define ATOMIC_SET(x, n)        x = n
+  #define ATOMIC_READ(x)          x
+  #define ATOMIC_INC_RET(x)       (x.fetch_add(1) + 1)
 
-  #define ATOMIC_FLAG(n)      std::atomic_flag n
+  #define ATOMIC_FLAG(n)          std::atomic_flag n
   #define ATOMIC_TEST_AND_SET(x)  x.test_and_set()
-  #define ATOMIC_CLEAR(x)     x.clear()
+  #define ATOMIC_CLEAR(x)         x.clear()
  #else
-  #define ATOMIC_VAR(n)       int n
-  #define ATOMIC_SET(x, n)    x = n
-  #define ATOMIC_READ(x)      x
-  #define ATOMIC_INC_RET(x)   (__sync_fetch_and_add(&x, 1) + 1)
+  #define ATOMIC_VAR(n)           int n
+  #define ATOMIC_SET(x, n)        x = n
+  #define ATOMIC_READ(x)          x
+  #define ATOMIC_INC_RET(x)       (__sync_fetch_and_add(&x, 1) + 1)
 
-  #define ATOMIC_FLAG(n)      long int n
-  #define ATOMIC_TEST_AND_SET(x)  __atomic_test_and_set(&x, 0)
-  #define ATOMIC_CLEAR(x)     __atomic_clear(&x, 0)
+  #define ATOMIC_FLAG(n)          long int n
+  #define ATOMIC_TEST_AND_SET(x)  __sync_fetch_and_or(&x, 1)
+  #define ATOMIC_CLEAR(x)         __sync_fetch_and_and(&x, ~1)
  #endif
 
 #endif  // ! __KERNEL__
