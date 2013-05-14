@@ -64,7 +64,7 @@ struct __stopwatch_priv {
 
 
 #define STOPWATCH_INIT(x) \
-	static __stopwatch_priv __stopwatch_priv_##x = {{0, 0}, {0, 0}}
+	__stopwatch_priv __stopwatch_priv_##x = {{0, 0}, {0, 0}}
 
 
 #define STOPWATCH_START(x) \
