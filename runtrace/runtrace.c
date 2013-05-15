@@ -95,8 +95,10 @@
 
  #define LOCK_DECLARE(x)         pthread_rwlock_t x;
  #define LOCK_INIT(x)            { pthread_rwlockattr_t x##_attr; \
+                                 pthread_rwlockattr_init(&x##_attr); \
                                  pthread_rwlockattr_setkind_np(&x##_attr, PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP); \
-                                 pthread_rwlock_init(&x, &x##_attr); }
+                                 pthread_rwlock_init(&x, &x##_attr); \
+                                 pthread_rwlockattr_destroy(&x##_attr); }
  #define LOCK_DESTROY(x)         pthread_rwlock_destroy(&x)
  #define RDLOCK(x)               pthread_rwlock_rdlock(&x)
  #define WRLOCK(x)               pthread_rwlock_wrlock(&x)
