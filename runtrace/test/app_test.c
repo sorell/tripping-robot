@@ -25,7 +25,6 @@ static int running = 1;
 
 static pthread_t *thread;
 static int numberOfThreads;
-// static const int numberOfThreads = (int) sizeof(thread) / (int) sizeof(thread[0]);
 
 
 static void *
@@ -67,16 +66,18 @@ main(void)
 	int i;
 	
 
-	if ((numberOfThreads = sysconf(_SC_NPROCESSORS_ONLN) - 1) < 1) {
+	if ((numberOfThreads = sysconf(_SC_NPROCESSORS_ONLN) * 2) < 1) {
+	// if ((numberOfThreads = sysconf(_SC_NPROCESSORS_ONLN) - 1) < 1) {
 		numberOfThreads = 1;
 	}
 
+	// numberOfThreads = 5;
 	thread = (pthread_t *) malloc(sizeof(pthread_t) * numberOfThreads);
 
 	signal(SIGINT, sighandler);
 
 	runtrace_flush_on_abort(1);
-	runtrace_init();
+	runtrace_init(numberOfThreads+1);
 
 	for (i=0; i<numberOfThreads; ++i) {
 		

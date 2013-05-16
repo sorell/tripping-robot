@@ -172,10 +172,22 @@ static ATOMIC_VAR(curr_tp);
  *
  * This struct's purpose is to contain a helper buffer for vsnprintf to print in.
  * There are as many of these containers allocated in global vsprint_buffer as
- * there are CPUs in the machine.
- * To overcome race condition, a process must inspect the in_use bit 0 atomically
+ * the nr_threads param given in runtrace_init().
+ *
+ * A number of threads might call tpprint() in parallel.
+ *
+ * To overcome this race condition, a process must inspect the in_use bit 0 atomically
  * when selecting a buffer for itself to use. The process must continue traversing
  * the buffers until it finds an unused buffer.
+ *
+ * The user can configure runtrace facility with nr_threads parameter, which defines
+ * how many vspb_containers are allocated. This nr_threads should be set to value
+ * corresponding how many parallel calls to tpprint() can occur. Proper configuration 
+ * is essential for debugging sessions where multiple threads spam tpprint() 
+ * continuously. Having fewer buffers than parallel calls results in some thread(s) 
+ * being blocked in tpprint() waiting for an available buffer. Keep in mind that the 
+ * number of parallel calls might be higher than the number of CPUs, because threads 
+ * might get scheduled out while they're inside of tpprint().
  *
  * in_use
  *   Bit 0 denotes if the buffer is currently in use
@@ -196,9 +208,14 @@ struct vspb_container
 
 static struct vspb_container *vsprint_buffer;
 
+static int nr_cpus;
+static int nr_threads;
+
 static int tp_pool_size;
 static int tp_cnt_mask;
 static int tp_pool_mem_size;
+
+static int vspb_underrun_notice;
 
 
 /**
@@ -227,17 +244,26 @@ static struct file_operations cdev_fops = {
 
 
 #ifdef __KERNEL__
- #define WARNING(x...)  printk(KERN_WARNING __FILE__ ": " x)
+ #define RT_WARNING(x...)  printk(KERN_WARNING __FILE__ ": " x)
  // In kernel space, I'd not take such drastic measures as calling abort(), but
  // maybe try to be as noticeable as possible.
- #define DISABLING_ERR(x...)  printk(KERN_ALERT __FILE__ ": " x)
+ #define RT_DISABLING_ERR(x...)  printk(KERN_ALERT __FILE__ ": " x)
 #else
- #define WARNING(x...)  fprintf(stderr, __FILE__ ": " x)
- #define DISABLING_ERR(x...)  fprintf(stderr, __FILE__ ": " x); abort()
+ #define RT_WARNING(x...)  fprintf(stderr, __FILE__ ": " x)
+ #define RT_DISABLING_ERR(x...)  fprintf(stderr, __FILE__ ": " x); abort()
 #endif
 
 
 
+
+static void
+print_vsbp_underrun_notice(void)
+{
+	RT_WARNING("************************************************************\n");
+	RT_WARNING("Parallel calls exceeded the number of threads at some point.\n");
+	RT_WARNING("You might want to configure higher nr_of_threads. (%d)\n", nr_threads);
+	RT_WARNING("************************************************************\n");
+}
 
 /**
  * Private function sigabrt()
@@ -255,7 +281,8 @@ static int flush_on_abort;
 static int flush_with_flags;
 
 
-void sigabort(int const sig)
+static void
+sigabort(int const sig)
 {
 	if (SIGABRT == sig  &&  flush_on_abort) {
 		fprintf(stderr, 
@@ -263,6 +290,10 @@ void sigabort(int const sig)
 			"SIGABRT called! Flooding runtrace pool\n"
 			"**************************************\n");
 		print_trace_stack(flush_with_flags);
+	}
+
+	if (vspb_underrun_notice) {
+		print_vsbp_underrun_notice();
 	}
 }
 
@@ -466,7 +497,7 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
 			// - 30 chars for file name and line number
 			if (dst  &&  printed > size - (30 + 30 + RT_MSG_MAX)) {
 				if (0 == printed) {
-					DISABLING_ERR("Print buffer is too small\n");
+					RT_DISABLING_ERR("Print buffer is too small\n");
 				}
 				break;
 			}
@@ -549,16 +580,18 @@ cdev_read(struct file *const filp, char __user *const buf, size_t count, loff_t 
  *
 */
 static void
-environment_check(void)
+environment_check(int *const pool_size)
 {
-#ifndef __KERNEL__
+#ifdef __KERNEL__
+	(void) pool_size;
+#else
 	char const *const pool_size_env = getenv("RT_POOL_SIZE");
 	int i = 0;
 
 	if (pool_size_env) {
 		i = atoi(pool_size_env);
 		if (i > 0) {
-			runtrace_reconfigure(i);
+			*pool_size = i;
 		}
 	}
 #endif
@@ -597,6 +630,10 @@ runtrace_flush_on_abort(int const enable, int const print_flags)
 /**
  * User API function runtrace_reconfigure()
  *
+ * nr_of_threads
+ *   The number of parallel threads runtrace facility should be prepared to handle.
+ *   See more about this in comments of struct vspb_container.
+ *
  * pool_size
  *   New desired size for tracepoint pool.
  *
@@ -611,22 +648,22 @@ runtrace_flush_on_abort(int const enable, int const print_flags)
 */
 
 int
-runtrace_reconfigure(int const pool_size)
+runtrace_reconfigure(int nr_of_threads, int const pool_size)
 {
-	int nr_cpus = NR_CPUS;
 	int i;
 
 
-	if (nr_cpus < 1) {
-		WARNING("Could not detect number of CPUs. Assuming 4 for safety!");
-		nr_cpus = 4;
+	if (nr_of_threads < 1) {
+		RT_DISABLING_ERR("Invalid nr of threads param in %s (%d)\n", __FUNCTION__, nr_of_threads);
+		RT_WARNING("Assuming 1 thread!");
+		nr_of_threads = 1;
 	}
 	if (pool_size < 4) {
-		DISABLING_ERR("%s called with invalid pool_size %d (really?)\n", __FUNCTION__, pool_size);
+		RT_DISABLING_ERR("%s called with invalid pool_size %d (really?)\n", __FUNCTION__, pool_size);
 		return -1;
 	}
 	if (0 != (pool_size & (pool_size-1))) {
-		DISABLING_ERR("%s called with invalid pool_size %d (not power of 2)\n", __FUNCTION__, pool_size);
+		RT_DISABLING_ERR("%s called with invalid pool_size %d (not power of 2)\n", __FUNCTION__, pool_size);
 		return -1;
 	}
 
@@ -634,6 +671,8 @@ runtrace_reconfigure(int const pool_size)
 		WRLOCK(print_rwlock);
 	}
 	
+	// nr_cpus is set in runtrace_init() because it's constant in this contexts
+	nr_threads = nr_of_threads;
 	tp_pool_size = pool_size;
 	tp_cnt_mask = tp_pool_size - 1;  // Forms a mask from 2^size
 	tp_pool_mem_size = tp_pool_size * sizeof(struct tracepoint);
@@ -648,7 +687,7 @@ runtrace_reconfigure(int const pool_size)
 
 	tp_pool = (struct tracepoint *) MALLOC(tp_pool_mem_size);
 	tp_pool_copy = (struct tracepoint *) MALLOC(tp_pool_mem_size);
-	vsprint_buffer = (struct vspb_container *) MALLOC(nr_cpus * sizeof(struct vspb_container));
+	vsprint_buffer = (struct vspb_container *) MALLOC(nr_threads * sizeof(struct vspb_container));
 
 
 	if (!tp_pool  ||  !tp_pool_copy  ||  !vsprint_buffer) {
@@ -662,14 +701,13 @@ runtrace_reconfigure(int const pool_size)
 			FREE(vsprint_buffer); vsprint_buffer = NULL;
 		}
 
-		DISABLING_ERR("Cannot allocate %d bytes for tracepoint pool and its copy buffer", tp_pool_mem_size);
+		RT_DISABLING_ERR("Cannot allocate %d bytes for tracepoint pool and its copy buffer", tp_pool_mem_size);
 		return -1;
 	}
 
 
 	memset(tp_pool, 0, tp_pool_mem_size);
-	for (i=0; i<nr_cpus; ++i) {
-		// vsprint_buffer[i].in_use = 0;
+	for (i=0; i<nr_threads; ++i) {
 		ATOMIC_CLEAR(vsprint_buffer[i].in_use);
 		vsprint_buffer[i].next = &vsprint_buffer[i+1];
 	}
@@ -687,6 +725,10 @@ runtrace_reconfigure(int const pool_size)
 /**
  * User API function runtrace_init()
  *
+ * nr_threads
+ *   The number of parallel threads runtrace facility should be prepared to handle.
+ *   See more about this in comments of struct vspb_container.
+ *
  * Initialises runtrace facility. This must be called before other user API 
  * functions, except runtrace_reconfigure, are called.
  * Result of calling this function multiple times is undetermined.
@@ -698,16 +740,18 @@ runtrace_reconfigure(int const pool_size)
 */
 
 int
-runtrace_init()
+runtrace_init(int const nr_of_threads)
 {
+	int pool_size = RT_POOL_SIZE_DFLT;
+
+
 	ATOMIC_SET(curr_tp, -1);
+	nr_cpus = NR_CPUS;
 
-	environment_check();
+	environment_check(&pool_size);
 
-	if (!tp_pool) {
-		if (runtrace_reconfigure(RT_POOL_SIZE_DFLT) < 0 ) {
-			return -1;
-		}
+	if (runtrace_reconfigure(nr_of_threads, pool_size) < 0 ) {
+		return -1;
 	}
 
 	LOCK_INIT(print_rwlock);
@@ -716,7 +760,7 @@ runtrace_init()
 
 #ifdef __KERNEL__
 	if (alloc_chrdev_region(&dev, 0, 1, "runtrace")) {
-		DISABLING_ERR("Can't allocate chrdev region\n");
+		RT_DISABLING_ERR("Can't allocate chrdev region\n");
 		return -1;
 	}
 	major_number = MAJOR(dev);
@@ -724,7 +768,7 @@ runtrace_init()
 	// cdev.owner = THIS_MODULE;
 	
 	if (cdev_add(&cdev, MKDEV(major_number, 0), 1)) {
-		DISABLING_ERR("Can't add chrdev %d:0\n", major_number);
+		RT_DISABLING_ERR("Can't add chrdev %d:0\n", major_number);
 		return -1;
 	}
 
@@ -758,6 +802,10 @@ runtrace_exit(void)
 	cdev_del(&cdev);
 	unregister_chrdev_region(dev, 1);
 #endif
+
+	if (vspb_underrun_notice) {
+		print_vsbp_underrun_notice();
+	}
 
 	if (tp_pool) {
 		FREE(tp_pool);
@@ -802,10 +850,10 @@ make_tracepoint(int const line, char const *const src, char const *const msg)
 
 
 	if (!tp_pool) {
-		DISABLING_ERR("You did not call init_tracepoints()\n");
+		RT_DISABLING_ERR("You did not call init_tracepoints()\n");
 		// When in kernel, try to initialise runtrace facility().
 		// Userspace app calls abort() in DISABLING_ERR
-		runtrace_init();
+		runtrace_init(1);
 	}
 	
 
@@ -854,10 +902,10 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 
 
 	if (!vsprint_buffer) {
-		DISABLING_ERR("You did not call init_tracepoints()\n");
+		RT_DISABLING_ERR("You did not call init_tracepoints()\n");
 		// When in kernel, try to initialise runtrace facility().
 		// Userspace app calls abort() in DISABLING_ERR
-		runtrace_init();
+		runtrace_init(1);
 	}
 
 
@@ -869,6 +917,19 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 
 	while (ATOMIC_TEST_AND_SET(container->in_use)) {
 		container = container->next;
+
+		// If we go around full set of vsprint_buffers all the buffers are in use.
+		if (container == vsprint_buffer) {
+			// If the number of buffers (equal to nr_threads) is greater than 
+			// the number of CPUs, it means there's thread(s) scheduled out while 
+			// holding a buffer. 
+			// We can yield the thread to let other threads run to free the buffers.
+			if (nr_threads > nr_cpus) {
+				sched_yield();
+			}
+
+			vspb_underrun_notice = 1;
+		}
 	}
 
 	va_start (args, fmt);

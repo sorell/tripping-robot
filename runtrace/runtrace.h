@@ -58,9 +58,9 @@ int  tpprintf(int line, char const *src, char const *fmt, ...);
 void runtrace_flush_on_abort(int enable, int print_flags = RT_PRINT_DEFAULT);
 #endif
 
-int  runtrace_reconfigure(int pool_size);
+int  runtrace_reconfigure(int nr_threads, int pool_size);
 
-int  runtrace_init(void);
+int  runtrace_init(int nr_threads);
 void runtrace_exit(void);
 
 #ifdef __KERNEL__
