@@ -1,3 +1,5 @@
+stopwatch
+=========
 
 Stopwatch is a very simple tool for tracking time.
 All code resides in one header file, which has convenience macros for 
@@ -5,7 +7,7 @@ operations.
 
 
 USAGE (with your application)
-=============================
+-----------------------------
 
 Initialising: 
 STOPWATCH_INIT(your_timer_name)

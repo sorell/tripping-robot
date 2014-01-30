@@ -1,3 +1,5 @@
+runtrace
+========
 
 Runtrace facility is for tracing your application's execution. You can place 
 tracepoint creation macros in your software and print out the history any time.
@@ -17,7 +19,7 @@ moment, although not for whole printing procedure.
 
 
 USAGE (with your application)
-=============================
+-----------------------------
 
 Initialising: 
 runtrace_init(): Call when your application starts or before any tracepoints 

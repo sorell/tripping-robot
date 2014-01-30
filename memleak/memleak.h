@@ -19,14 +19,14 @@
 #define SS_ENABLE_MEMTRACE
 
 // Comment this to disable deallocation checking on application exit
-//#define SS_ENABLE_MEMTRACE_EXIT
+#define SS_ENABLE_MEMTRACE_EXIT
 
 // Comment this to disable per-allocation reporting
 // #define SS_MEMTRACE_VERBOSE
 
 // Define as "" to log to stderr
 //#define SS_MEMTRACE_LOG "/tmp/memtrace.log"
-#define SS_MEMTRACE_LOG "/tmp/scsd-memtrace"
+#define SS_MEMTRACE_LOG ""
 
 // Comment to leave timestamps out of the log output
 // #define SS_MEMTRACE_LOG_TIMESTAMP

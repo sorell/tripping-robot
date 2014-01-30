@@ -29,8 +29,6 @@
 #ifdef SS_ENABLE_MEMTRACE
 
 #define SS_TRACE "Memtrace"
-#define SS_LEAK  "Memleak"
-#define SS_BUG   "Memleak BUG"
 
 #undef malloc
 #undef free
@@ -319,7 +317,7 @@ list_push_record(char const *const file, int const line, size_t const size, bool
 	struct alloc_record *const record = (struct alloc_record *) malloc(sizeof(struct alloc_record));
 	
 	if (!record) {
-		ml_log(SS_LEAK ": Failed to allocate memory for list\n");
+		ml_log(SS_TRACE ": Failed to allocate memory for list\n");
 		exit(1);
 	}
 	
@@ -358,23 +356,24 @@ ss_memleak_point_register(char const *const file, int const line)
 class RecordExitChecker
 {
 public:
-	~RecordExitChecker();
+	RecordExitChecker() { }
+	~RecordExitChecker()
+	{
+		struct alloc_record *list_it;
+		
+		ml_log(SS_TRACE ": Application exited\n");
+		ss_pthread_mutex_lock(&rec_lock);
+		
+		list_for_each(list_it, alloc_list)
+		{
+			ml_log(SS_TRACE ": %d unclean records from %s: %d  %s\n", list_it->cnt, list_it->file, list_it->line,
+				list_it->overallocations ? "(OA)" : "");
+		}
+		
+		ss_pthread_mutex_unlock(&rec_lock);
+	}
 };
 
-RecordExitChecker::~RecordExitChecker()
-{
-	struct alloc_record *list_it;
-	
-	ss_pthread_mutex_lock(&rec_lock);
-	
-	list_for_each(list_it, alloc_list)
-	{
-		ml_log(SS_LEAK ": %d unclean records from %s: %d  %s\n", list_it->cnt, list_it->file, list_it->line,
-			list_it->overallocations ? "(OA)", "");
-	}
-	
-	ss_pthread_mutex_unlock(&rec_lock);
-}
 
 static RecordExitChecker ExitChecker;
 
@@ -504,7 +503,7 @@ get_memory(size_t const size, char const *const file, int const line)
 	}
 	
 	if (!ptr) {
-		ml_log(SS_LEAK ": Could not allocate memory at %s: %d\n", file, line);
+		ml_log(SS_TRACE ": Could not allocate memory at %s: %d\n", file, line);
 		return NULL;
 	}
 	
