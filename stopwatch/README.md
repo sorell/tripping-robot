@@ -29,6 +29,9 @@ STOPWATCH_ELAPSED_F(ytn)
 - Returns the difference between start and stop timestamps in floating point
 value.
 
+STOPWATCH_TO_TIMEVAL(your_timeval, ytn)
+- Copies difference between start and stop timestamps to timeval struct.
+
 STOPWATCH_PRINT(ytn)
 - Prints the difference between start and stop timestamps out to stderr 
 (userspace) or to prink buffer (kernel, KERN_WARNING level).

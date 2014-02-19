@@ -1,5 +1,5 @@
 
-PROJ = stopwatch
+PROJ = stopwatch-test
 SRCS = test.cpp
 
 

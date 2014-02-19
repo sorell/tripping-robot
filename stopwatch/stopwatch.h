@@ -26,9 +26,12 @@
  * STOPWATCH_PRINT(A);
  * 
  * double diff = STOPWATCH_ELAPSED_F(A);
- 
+ *
  * int secs  = STOPWATCH_ELAPSED_S(A);
  * int usecs = STOPWATCH_ELAPSED_US(A);
+ * 
+ * struct timeval t;
+ * STOPWATCH_TO_TIMEVAL(t, A);
 */
 
 #ifdef __KERNEL__
@@ -64,7 +67,7 @@ struct __stopwatch_priv {
 
 
 #define STOPWATCH_INIT(x) \
-	__stopwatch_priv __stopwatch_priv_##x = {{0, 0}, {0, 0}}
+	struct __stopwatch_priv __stopwatch_priv_##x = {{0, 0}, {0, 0}}
 
 
 #define STOPWATCH_START(x) \
@@ -73,6 +76,19 @@ struct __stopwatch_priv {
 
 #define STOPWATCH_STOP(x) \
 	do { __STOPWATCH_GETTIMEOFDAY(__stopwatch_priv_##x.stop); } while (0)
+
+
+#define STOPWATCH_TO_TIMEVAL(tval, x) \
+	do { \
+		if (__stopwatch_priv_##x.start.tv_usec > __stopwatch_priv_##x.stop.tv_usec) { \
+			(tval).tv_sec = __stopwatch_priv_##x.stop.tv_sec - __stopwatch_priv_##x.start.tv_sec - 1; \
+			(tval).tv_usec = __stopwatch_priv_##x.stop.tv_usec + 1000000 - __stopwatch_priv_##x.start.tv_usec; \
+		} \
+		else { \
+			(tval).tv_sec = __stopwatch_priv_##x.stop.tv_sec - __stopwatch_priv_##x.start.tv_sec; \
+			(tval).tv_usec = __stopwatch_priv_##x.stop.tv_usec - __stopwatch_priv_##x.start.tv_usec; \
+		} \
+	} while (0)
 
 
 #define STOPWATCH_ELAPSED_S(x) \

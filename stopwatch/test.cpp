@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "stopwatch.h"
 
 
@@ -62,10 +63,15 @@ main(void)
 	double const elap = STOPWATCH_ELAPSED_F(a);
 	int const elap_s = STOPWATCH_ELAPSED_S(a);
 	int const elap_us = STOPWATCH_ELAPSED_US(a);
+	
+	struct timeval *const tval = (struct timeval *) malloc(sizeof(struct timeval));
+	STOPWATCH_TO_TIMEVAL(*tval, a);
 
 	printf("Elapsed in floating point value: %f\n", elap);
 	printf("Elapsed seconds: %d%s\n", elap_s, elap_s != (int) elap ? " <== BUG!": "");
-	printf("Elapsed micro seconds: %d%s\n", elap_us, elap_us != ((int) (elap* 1000000 + 0.5)) % 1000000 ? " <== BUG!": "");
+	printf("Elapsed micro seconds: %d%s\n", elap_us, elap_us != ((int) (elap * 1000000 + 0.5)) % 1000000 ? " <== BUG!": "");
+	printf("Copy to timeval %ld.%06lu%s\n", tval->tv_sec, tval->tv_usec, tval->tv_sec != elap_s  ||  tval->tv_usec != elap_us ? " <== BUG!" : "");
 
+	free(tval);
 	return 0;
 }
