@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Sami Sorell
+ * Copyright (C) 2013-2014 Sami Sorell
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -244,13 +244,13 @@ static struct file_operations cdev_fops = {
 
 
 #ifdef __KERNEL__
- #define RT_WARNING(x...)  printk(KERN_WARNING __FILE__ ": " x)
+ #define RT_WARNING(x...)  do { printk(KERN_WARNING __FILE__ ": " x); } while (0)
  // In kernel space, I'd not take such drastic measures as calling abort(), but
  // maybe try to be as noticeable as possible.
- #define RT_DISABLING_ERR(x...)  printk(KERN_ALERT __FILE__ ": " x)
+ #define RT_DISABLING_ERR(x...)  do { printk(KERN_ALERT __FILE__ ": " x); } while (0)
 #else
- #define RT_WARNING(x...)  fprintf(stderr, __FILE__ ": " x)
- #define RT_DISABLING_ERR(x...)  fprintf(stderr, __FILE__ ": " x); abort()
+ #define RT_WARNING(x...)  do { fprintf(stderr, __FILE__ ": " x); } while (0)
+ #define RT_DISABLING_ERR(x...)  do { fprintf(stderr, __FILE__ ": " x); abort(); } while (0)
 #endif
 
 
@@ -268,7 +268,7 @@ print_vsbp_underrun_notice(void)
 /**
  * Private function sigabrt()
  *
- * This is handler for SIGABRT signal. If
+ * This is handler for SIGABRT signal.
  *
  * Return
  *   void
@@ -307,7 +307,7 @@ sigabort(int const sig)
  * WARNING! MUST BE CALLED FROM LOCKED CONTEXT!
  *
  * flags
- *   Bitmast of flags telling how to print (see runtrace.h RT_PRINT_*)
+ *   Bitmask of flags telling how to print (see runtrace.h RT_PRINT_*)
  * dst 
  *   Destination buffer ptr where to print to. If NULL, output is directed to printk or stderr
  * tp 
@@ -406,7 +406,7 @@ __print_trace_point(int const flags, char *const dst, struct tracepoint const *c
  * from interrupt context.
  *
  * flags
- *   Bitmast of flags telling how to print (see runtrace.h RT_PRINT_*)
+ *   Bitmask of flags telling how to print (see runtrace.h RT_PRINT_*)
  * dst 
  *   Destination buffer ptr where to print to. If NULL, output is directed to printk or stderr
  * size
@@ -431,7 +431,7 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
 	// for the print function to use. This is because copying the buffer
 	// is much faster than printing its contents.
 	//
-	// On a core i5 machine it takes about x times longer to print out the
+	// On a core i5 machine it takes about 110 times longer to print out the
 	// contents than copy it for a userspace application. The timing was
 	// tested with 2 writer threads (total 4 cores on the cpu) to have least
 	// interruptions on the printing thread by scheduler as possible.
@@ -551,7 +551,7 @@ cdev_open(struct inode *const inode, struct file *const filp)
 
 
 /**
- * Kernel callback function cdev_raed()
+ * Kernel callback function cdev_read()
  *
  * Standard read function for file operations.
  * Calls trace stack printing. File's offset data is used to keep track of printing

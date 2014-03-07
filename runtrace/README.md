@@ -3,7 +3,7 @@ runtrace
 
 Runtrace facility is for tracing your application's execution. You can place 
 tracepoint creation macros in your software and print out the history any time.
-Every tracepoint saves line, line or calling function and an optional custom
+Every tracepoint saves file and line or calling function and an optional custom
 message.
 
 Runtrace is designed for debugging application where your can't or it's not 
@@ -18,8 +18,8 @@ Printing out trace history is a bit slower and locks the facility for a brief
 moment, although not for whole printing procedure.
 
 
-USAGE (with your application)
------------------------------
+USAGE (with your application or kernel module)
+----------------------------------------------
 
 Initialising: 
 runtrace_init(): Call when your application starts or before any tracepoints 
