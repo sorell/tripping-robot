@@ -172,7 +172,7 @@ static ATOMIC_VAR(curr_tp);
  *
  * This struct's purpose is to contain a helper buffer for vsnprintf to print in.
  * There are as many of these containers allocated in global vsprint_buffer as
- * the nr_threads param given in runtrace_init().
+ * the max_threads param given in runtrace_init().
  *
  * A number of threads might call tpprint() in parallel.
  *
@@ -180,8 +180,8 @@ static ATOMIC_VAR(curr_tp);
  * when selecting a buffer for itself to use. The process must continue traversing
  * the buffers until it finds an unused buffer.
  *
- * The user can configure runtrace facility with nr_threads parameter, which defines
- * how many vspb_containers are allocated. This nr_threads should be set to value
+ * The user can configure runtrace facility with max_threads parameter, which defines
+ * how many vspb_containers are allocated. This max_threads should be set to value
  * corresponding how many parallel calls to tpprint() can occur. Proper configuration 
  * is essential for debugging sessions where multiple threads spam tpprint() 
  * continuously. Having fewer buffers than parallel calls results in some thread(s) 
@@ -209,7 +209,7 @@ struct vspb_container
 static struct vspb_container *vsprint_buffer;
 
 static int nr_cpus;
-static int nr_threads;
+static int max_threads;
 
 static int tp_pool_size;
 static int tp_cnt_mask;
@@ -261,7 +261,7 @@ print_vsbp_underrun_notice(void)
 {
 	RT_WARNING("************************************************************\n");
 	RT_WARNING("Parallel calls exceeded the number of threads at some point.\n");
-	RT_WARNING("You might want to configure higher nr_of_threads. (%d)\n", nr_threads);
+	RT_WARNING("You might want to configure higher nr_of_threads. (%d)\n", max_threads);
 	RT_WARNING("************************************************************\n");
 }
 
@@ -672,7 +672,7 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 	}
 	
 	// nr_cpus is set in runtrace_init() because it's constant in this contexts
-	nr_threads = nr_of_threads;
+	max_threads = nr_of_threads;
 	tp_pool_size = pool_size;
 	tp_cnt_mask = tp_pool_size - 1;  // Forms a mask from 2^size
 	tp_pool_mem_size = tp_pool_size * sizeof(struct tracepoint);
@@ -687,7 +687,7 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 
 	tp_pool = (struct tracepoint *) MALLOC(tp_pool_mem_size);
 	tp_pool_copy = (struct tracepoint *) MALLOC(tp_pool_mem_size);
-	vsprint_buffer = (struct vspb_container *) MALLOC(nr_threads * sizeof(struct vspb_container));
+	vsprint_buffer = (struct vspb_container *) MALLOC(max_threads * sizeof(struct vspb_container));
 
 
 	if (!tp_pool  ||  !tp_pool_copy  ||  !vsprint_buffer) {
@@ -707,7 +707,7 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 
 
 	memset(tp_pool, 0, tp_pool_mem_size);
-	for (i=0; i<nr_threads; ++i) {
+	for (i=0; i<max_threads; ++i) {
 		ATOMIC_CLEAR(vsprint_buffer[i].in_use);
 		vsprint_buffer[i].next = &vsprint_buffer[i+1];
 	}
@@ -725,7 +725,7 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 /**
  * User API function runtrace_init()
  *
- * nr_threads
+ * nr_of_threads
  *   The number of parallel threads runtrace facility should be prepared to handle.
  *   See more about this in comments of struct vspb_container.
  *
@@ -920,14 +920,16 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 
 		// If we go around full set of vsprint_buffers all the buffers are in use.
 		if (container == vsprint_buffer) {
-			// If the number of buffers (equal to nr_threads) is greater than 
+#ifndef __KERNEL__
+			// If the number of buffers (equal to max_threads) is greater than 
 			// the number of CPUs, it means there's thread(s) scheduled out while 
 			// holding a buffer. 
 			// We can yield the thread to let other threads run to free the buffers.
-			if (nr_threads > nr_cpus) {
+			if (max_threads > nr_cpus) {
 				sched_yield();
 			}
-
+#endif
+			
 			vspb_underrun_notice = 1;
 		}
 	}

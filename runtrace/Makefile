@@ -1,5 +1,5 @@
 
-LINUXPATH=/usr/src/linux/
+LINUXPATH=/lib/modules/`uname -r`/build
 
 rt_mod_test-objs:=runtrace.o test/mod_test.o
 obj-m:=rt_mod_test.o

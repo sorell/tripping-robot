@@ -13,18 +13,22 @@
 
 
 
-#if !defined __KERNEL__  &&  !defined __MODULE__
-#error This is intended as test module for runtrace application
-#endif
-
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/slab.h>
 #include <linux/timer.h>
 #include <linux/proc_fs.h>
+#include <generated/uapi/linux/version.h>  // For KERNEL_VERSION
 #include "../runtrace.h"
 
 
 #define MODNAME "rt_mod_test"
+
+
+#if !defined __KERNEL__  ||  !defined MODULE
+#error This is intended as test module for runtrace application
+#endif
+
 
 
 static struct proc_dir_entry *proc_file;
@@ -100,15 +104,22 @@ runtrace_test_init(void)
 {
 	printk(KERN_INFO "Loading " MODNAME "\n");
 	
-	runtrace_init();
+	runtrace_init(NR_CPUS);
 
-	proc_file = create_proc_entry(MODNAME, 0777, NULL);
+
+#if (LINUX_VERSION_CODE < 0x00030900)  // 3.9.0
+	proc_file = create_proc_entry(MODNAME, 0666, NULL);
+	if (proc_file)
+		proc_file->proc_fops = &proc_fops;
+#else
+	proc_file = proc_create_data(MODNAME, 0666, NULL, &proc_fops, NULL);
+#endif
+
 	if (!proc_file) {
 		printk(KERN_ERR MODNAME ": Failed to create proc entry '%s'\n", MODNAME);
 		return -EPERM;
 	}
 	
-	proc_file->proc_fops = &proc_fops;
 	return 0;
 }
 
