@@ -16,7 +16,7 @@
 
 
 #define RT_POOL_SIZE_DFLT   256
-#define RT_MSG_MAX          200
+#define RT_MSG_MAX          200  // Max user message length per tracepoint
 
 
 /**
@@ -28,8 +28,8 @@
  * Macros without _P just do normal memcpy for the message string.
 */
 
-#define TP_FILE(msg)  make_tracepoint(__LINE__, __FILE__, msg)
-#define TP_FUNK(msg)  make_tracepoint(__LINE__, __FUNCTION__, msg)
+#define TP_FILE(msg)  make_tracept(__LINE__, __FILE__, msg)
+#define TP_FUNK(msg)  make_tracept(__LINE__, __FUNCTION__, msg)
 #define TP_FILE_P(fmt...)  tpprintf(__LINE__, __FILE__, fmt)
 #define TP_FUNK_P(fmt...)  tpprintf(__LINE__, __FUNCTION__, fmt)
 
@@ -50,7 +50,7 @@
 #define RT_PRINT_ALL_MS    (~0)
 
 
-void make_tracepoint(int line, char const *src, char const *msg);
+void make_tracept(int line, char const *src, char const *msg);
 int  tpprintf(int line, char const *src, char const *fmt, ...);
 
 

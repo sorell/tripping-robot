@@ -25,6 +25,10 @@
 
 
 #ifdef __KERNEL__
+ #ifdef MODULE
+  #include <linux/module.h>
+ #endif
+
  #include <linux/kernel.h>
  #include <linux/slab.h>
  #include <linux/time.h>
@@ -32,6 +36,7 @@
  #include <linux/fs.h>
  #include <linux/cdev.h>
  #include <asm/atomic.h>
+ #include <asm/uaccess.h>
 #else
  #include <stdio.h>
  #include <stdlib.h>
@@ -79,7 +84,8 @@
  #define ATOMIC_VAR(n)           atomic_t n
  #define ATOMIC_SET(x, n)        atomic_set(&x, n)
  #define ATOMIC_READ(x)          atomic_read(&x)
- #define ATOMIC_INC_RET(x)       (atomic_inc_return(&x))
+ #define ATOMIC_RET_INC(x)       (atomic_inc_return(&x) - 1)
+ #define ATOMIC_DEC(x)           atomic_dec(&x)
 
  #define ATOMIC_FLAG(n)          long int n
  #define ATOMIC_TEST_AND_SET(x)  test_and_set_bit(0, &x)
@@ -109,7 +115,7 @@
   #define ATOMIC_VAR(n)           std::atomic<unsigned int> n
   #define ATOMIC_SET(x, n)        x = n
   #define ATOMIC_READ(x)          x
-  #define ATOMIC_INC_RET(x)       (x.fetch_add(1) + 1)
+  #define ATOMIC_RET_INC(x)       x.fetch_add(1)
 
   #define ATOMIC_FLAG(n)          std::atomic_flag n
   #define ATOMIC_TEST_AND_SET(x)  x.test_and_set()
@@ -118,7 +124,7 @@
   #define ATOMIC_VAR(n)           int n
   #define ATOMIC_SET(x, n)        x = n
   #define ATOMIC_READ(x)          x
-  #define ATOMIC_INC_RET(x)       (__sync_fetch_and_add(&x, 1) + 1)
+  #define ATOMIC_RET_INC(x)       __sync_fetch_and_add(&x, 1)
 
   #define ATOMIC_FLAG(n)          long int n
   #define ATOMIC_TEST_AND_SET(x)  __sync_fetch_and_or(&x, 1)
@@ -134,24 +140,24 @@ static int lock_initialised;
 
 
 /**
- * Private struct tracepoint
+ * Private struct tracept
  *
- * Contains data of one tracepoint created by make_tracepoint().
+ * Contains data of one tracept created by make_tracept().
  *
  * time
- *   Timestamp of when the tracepoint is created
+ *   Timestamp of when the tracept is created
  * line
- *   Line number from where tracepoint is created
+ *   Line number from where tracept is created
  * src
  *   Ptr to nul-terminated string that is available for the whole life time of
- *   tracepoint facility.
- *   See make_tracepoint() for detailed info.
+ *   tracept facility.
+ *   See make_tracept() for detailed info.
  * msg
  *   Free text field for user input data.
  *
 */
 
-struct tracepoint
+struct tracept
 {
 	struct timeval time;
 	
@@ -162,9 +168,9 @@ struct tracepoint
 };
 
 
-static struct tracepoint *tp_pool;
-static struct tracepoint *tp_pool_copy;
-static ATOMIC_VAR(curr_tp);
+static struct tracept *tp_pool;
+static struct tracept *tp_pool_copy;
+static ATOMIC_VAR(next_tp);
 
 
 /**
@@ -231,14 +237,23 @@ static int major_number;
 
 
 static int cdev_open(struct inode *inode, struct file *filp);
+static int cdev_release(struct inode *inode, struct file *filp);
 static ssize_t cdev_read(struct file *filp, char __user *buf, size_t count, loff_t *offp);
+// static ssize_t cdev_write(struct file *filp, const char __user *, size_t, loff_t *);
+
+static ssize_t cdev_write(struct file *filp, char const __user *buf, size_t count, loff_t *offp);
 
 static struct file_operations cdev_fops = {
-	// .owner   = THIS_MODULE,
 	.open    = cdev_open,
+	.release = cdev_release,
 	.read    = cdev_read,
+	.write   = cdev_write,
 	.llseek  = no_llseek
 };
+
+static ATOMIC_VAR(cdev_readers);
+static DECLARE_WAIT_QUEUE_HEAD(read_queue);
+static int cdev_blocking_read = 1;
 
 #endif  // __KERNEL__
 
@@ -302,7 +317,7 @@ sigabort(int const sig)
 
 /**
  * Private function __print_trace_point()
- * Prints out one tracepoint.
+ * Prints out one tracept.
  *
  * WARNING! MUST BE CALLED FROM LOCKED CONTEXT!
  *
@@ -311,7 +326,7 @@ sigabort(int const sig)
  * dst 
  *   Destination buffer ptr where to print to. If NULL, output is directed to printk or stderr
  * tp 
- *   Ptr to struct tracepoint to print
+ *   Ptr to struct tracept to print
  * prev_time 
  *   Ptr to previously printed tp's time. This is read for calculating time difference and 
  *   written for current tp's timestamp. Ptr may be NULL.
@@ -324,11 +339,11 @@ sigabort(int const sig)
 */
 
 static int
-__print_trace_point(int const flags, char *const dst, struct tracepoint const *const tp, u64 *const prev_time)
+__print_trace_point(int const flags, char *const dst, struct tracept const *const tp, u64 *const prev_time)
 {
 #ifdef __KERNEL__
  #define PRINT(p, dst, x, ...)  \
-    if (!dst)  printk(x, __VA_ARGS__); \
+    if (!dst)  printk(KERN_INFO x, __VA_ARGS__); \
     else       p += sprintf(dst + p, x, __VA_ARGS__)
 #else
  #define PRINT(p, dst, x, ...)  \
@@ -337,9 +352,6 @@ __print_trace_point(int const flags, char *const dst, struct tracepoint const *c
 #endif
 
 
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
-// #error Restore u64 time;
-#endif
 	u64 time;
 	unsigned int time_diff = 0;
 	int printed = 0;
@@ -402,7 +414,7 @@ __print_trace_point(int const flags, char *const dst, struct tracepoint const *c
 
 /**
  * User API function print_trace_stack()
- * Prints out the whole tracepoint stack. Is multithread safe and can be called
+ * Prints out the whole tracept stack. Is multithread safe and can be called
  * from interrupt context.
  *
  * flags
@@ -413,8 +425,8 @@ __print_trace_point(int const flags, char *const dst, struct tracepoint const *c
  *   Size of the buffer pointed by dst
  * priv
  *   Pointer to an integer of print_trace_stack's private data.
- *   If dst buffer's size was not enough to print whole tracepoint stack, the identifier of
- *   the next to be printed tracepoint is stored in priv's memory location. priv may be NULL. 
+ *   If dst buffer's size was not enough to print whole tracept stack, the identifier of
+ *   the next to be printed tracept is stored in priv's memory location. priv may be NULL. 
  *
  * Return
  *   Number of bytes written to buffer pointed by dst. 
@@ -424,10 +436,10 @@ __print_trace_point(int const flags, char *const dst, struct tracepoint const *c
 */
 
 int
-print_trace_stack(int const flags, char *const dst, int const size, int *const priv)
+print_trace_stack(int const flags, char *const dst, int size, int *const priv)
 {
 	//
-	// The tracepoint pool memory in whole is copied to another buffer
+	// The tracept pool memory in whole is copied to another buffer
 	// for the print function to use. This is because copying the buffer
 	// is much faster than printing its contents.
 	//
@@ -444,15 +456,21 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
 	// The write lock must be held only when operating on common tp_pool buffer.
 	//
 
-	// static int const tp_pool_mem_size = (tp_cnt_mask+1) * sizeof(struct tracepoint);
-	// static struct tracepoint *tp_pool_copy = tp_pool;
+	// static int const tp_pool_mem_size = (tp_cnt_mask+1) * sizeof(struct tracept);
+	// static struct tracept *tp_pool_copy = tp_pool;
 
 	int tp_num;
 	int last_tp;
 	int printed = 0;
-	int last_printed = 0;
-	struct tracepoint const *tp;
+	struct tracept const *tp;
 	u64 prev_time = 0;
+	int overrun = 0;
+
+	// Worst-case guess for the size needed in buffer per one tracept record:
+	// - 30 chars for absolute time + diff to previous time
+	// - 30 chars for file name and line number
+	int const needed_bufsize = 30 + 30 + RT_MSG_MAX;
+	struct tracept const *const tp_end = tp_pool_copy + tp_cnt_mask;
 
 // static u64 cnts;
 // static u64 total;
@@ -462,50 +480,68 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
 
 // GETTIMEOFDAY(&start);
 	
-// #ifdef __KERNEL__
-// printk(KERN_ERR "%s: %x, %p, %d, %p\n", __FUNCTION__, flags, dst, size, priv);
-// #endif
 	WRLOCK(print_rwlock);
-	last_tp = ATOMIC_READ(curr_tp);
+	last_tp = ATOMIC_READ(next_tp);
 	memcpy(tp_pool_copy, tp_pool, tp_pool_mem_size);
 	WRUNLOCK(print_rwlock);
 
 	
-	if (priv  &&  *priv == last_tp + 1) {
-		return 0;
+	if (size < needed_bufsize) {
+		RT_DISABLING_ERR("Print buffer is too small\n");
+		return -1;
 	}
-
 
 // GETTIMEOFDAY(&stop);
 
+	// Adjust tp_num to the oldest record of ring buffer.
 	if (priv) {
+		if (last_tp == *priv) {
+			return 0;
+		}
+
 		tp_num = *priv;
-		if (tp_num < last_tp - tp_cnt_mask  ||  tp_num > last_tp) {
-			tp_num = last_tp - tp_cnt_mask;
+		
+		// The next_tp uses int's whole range. We need to check if 0 is in middle of current
+		// ring buffer. F.ex. with tp_num 100 and tp_pool_size 256, the pool's records go
+		// from [-156..99].
+		if ((int) (last_tp - tp_cnt_mask) < 0) {
+			if (tp_num > last_tp  &&  tp_num < last_tp - tp_pool_size) {
+				tp_num = last_tp - tp_pool_size;
+				overrun = 1;
+			}
+		}
+		else {
+			if (tp_num < last_tp - tp_pool_size  ||  tp_num > last_tp) {
+				tp_num = last_tp - tp_pool_size;
+				overrun = 1;
+			}
 		}
 	}
 	else {
-		tp_num = last_tp - tp_cnt_mask;
+		tp_num = last_tp - tp_pool_size;
 	}
 
-	for (; tp_num <= last_tp; ++tp_num) {
-		tp = tp_pool_copy + (tp_num & tp_cnt_mask);
 
+	tp = tp_pool_copy + (tp_num & tp_cnt_mask);
+
+	// Print ellipsis to indicate that there might be a cap to previous print's tracepoints
+	if (overrun  &&  tp->src  &&  dst) {
+		PRINT(printed, dst + printed, "...%c", '\n');
+	}
+
+	for (; tp_num != last_tp; ++tp_num) {
 		if (tp->src) {
-			// Worst-case guess for the size needed in buffer per one tracepoint record:
-			// - 30 chars for absolute time + diff to previous time
-			// - 30 chars for file name and line number
-			if (dst  &&  printed > size - (30 + 30 + RT_MSG_MAX)) {
-				if (0 == printed) {
-					RT_DISABLING_ERR("Print buffer is too small\n");
-				}
+			// Overly protective sanity check
+			if (dst  &&  printed > size - needed_bufsize) {
 				break;
 			}
 			
-			last_printed = __print_trace_point(flags, dst + printed, tp, &prev_time);
-			printed += last_printed;
+			printed += __print_trace_point(flags, dst + printed, tp, &prev_time);
 		}
-		// else printk("s(%d) ", tp_num);
+
+		if (++tp > tp_end) {
+			tp = tp_pool_copy;
+		}
 	}
 
 	// UNLOCK(print_rwlock);
@@ -519,12 +555,7 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
 	
 
 	if (priv) {
-		// If 0 bytes was printed, there is possibility that the buffer did not suffice for
-		// printing a single tracepoint.
-		if (0 == printed)
-			*priv = last_tp + 1;
-		else 
-			*priv = tp_num;
+		*priv = tp_num;
 	}
 
 	return printed;
@@ -538,15 +569,45 @@ print_trace_stack(int const flags, char *const dst, int const size, int *const p
  * Kernel callback function cdev_open()
  *
  * Standard open function for file operations.
- * Initialises the f_pos to point to the oldest tracepoint.
+ * Initialises the f_pos to point beyond the oldest tracept.
  *
 */
 
 static int 
 cdev_open(struct inode *const inode, struct file *const filp)
 {
-	filp->f_pos = (unsigned int) (ATOMIC_READ(curr_tp) - tp_cnt_mask);
+#ifdef MODULE
+	if (!try_module_get(THIS_MODULE)) {
+		return -EACCES;
+	}
+#endif
+
+	if (ATOMIC_RET_INC(cdev_readers) > 1) {
+		ATOMIC_DEC(cdev_readers);
+		return -EBUSY;
+	}
+
+	// Place print pointer to 1 record behind the oldest one
+	filp->f_pos = (unsigned int) (ATOMIC_READ(next_tp) - tp_pool_size - 1);
 	return nonseekable_open(inode, filp);
+}
+
+
+/**
+ * Kernel callback function cdev_release()
+ *
+ * Decrement file usage count.
+ *
+*/
+
+static int
+cdev_release(struct inode *const inode, struct file *const filp)
+{
+	ATOMIC_DEC(cdev_readers);
+#ifdef MODULE
+	module_put(THIS_MODULE);
+#endif
+	return 0;
 }
 
 
@@ -562,8 +623,67 @@ cdev_open(struct inode *const inode, struct file *const filp)
 static ssize_t 
 cdev_read(struct file *const filp, char __user *const buf, size_t count, loff_t *const offp)
 {
-	int const ret = print_trace_stack(RT_PRINT_DEFAULT, buf, count, (unsigned int *) offp);
+	int ret;
+
+	do {
+		while (*(unsigned int *) offp == ATOMIC_READ(next_tp)) {
+			if (filp->f_flags & O_NONBLOCK) {
+				return -EAGAIN;
+			}
+			
+			// This is a convenience function for f.ex. cat. You can make cat non-blocking by typing
+			// 'blocking 0' in the device file.
+			if (!cdev_blocking_read) {
+				return 0;
+			}
+
+			if (wait_event_interruptible(read_queue, *(unsigned int *) offp != ATOMIC_READ(next_tp))) {
+				return -ERESTARTSYS;
+			}
+		}
+
+		ret = print_trace_stack(RT_PRINT_DEFAULT, buf, count, (unsigned int *) offp);
+
+	} while (0 == ret);
+
 	return ret;
+}
+
+
+/**
+ * Kernel callback function cdev_write()
+ *
+ * Standard read function for file operations.
+ * For user to change between blocking and non-blocking read methods.
+ *
+*/
+
+static ssize_t
+cdev_write(struct file *const filp, char const __user *const buf, size_t const count, loff_t *const offp)
+{
+	unsigned char local_buf[20];
+	size_t const len = count > sizeof(local_buf) ? sizeof(local_buf) : count;
+
+	static unsigned char const b0[] = "blocking 0";
+	static unsigned char const b1[] = "blocking 1";
+
+
+	*local_buf = '\0';
+	copy_from_user(local_buf, buf, len);
+
+	if (!strncmp(local_buf, b0, strlen(b0))) {
+		cdev_blocking_read = 0;
+	}
+	else if (!strncmp(local_buf, b1, strlen(b1))) {
+		cdev_blocking_read = 1;
+	}
+	else {
+		RT_WARNING("Unknown cmd in %s: %s\n", __FUNCTION__, local_buf);
+		return -EINVAL;
+	}
+
+	// Make the impression we just read everything
+	return count;
 }
 
 #endif  // __KERNEL__
@@ -579,6 +699,7 @@ cdev_read(struct file *const filp, char __user *const buf, size_t count, loff_t 
  *   void
  *
 */
+
 static void
 environment_check(int *const pool_size)
 {
@@ -635,10 +756,10 @@ runtrace_flush_on_abort(int const enable, int const print_flags)
  *   See more about this in comments of struct vspb_container.
  *
  * pool_size
- *   New desired size for tracepoint pool.
+ *   New desired size for tracept pool.
  *
  * If pool_size passes sanity checks, the lock is obtained (if needed) and the
- * tracepoint pool is reinitialised. This process clears the pool of its previous
+ * tracept pool is reinitialised. This process clears the pool of its previous
  * contents.
  *
  * Return
@@ -675,7 +796,7 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 	max_threads = nr_of_threads;
 	tp_pool_size = pool_size;
 	tp_cnt_mask = tp_pool_size - 1;  // Forms a mask from 2^size
-	tp_pool_mem_size = tp_pool_size * sizeof(struct tracepoint);
+	tp_pool_mem_size = tp_pool_size * sizeof(struct tracept);
 
 	
 	if (tp_pool)
@@ -685,8 +806,8 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 	if (vsprint_buffer)
 		FREE(vsprint_buffer);
 
-	tp_pool = (struct tracepoint *) MALLOC(tp_pool_mem_size);
-	tp_pool_copy = (struct tracepoint *) MALLOC(tp_pool_mem_size);
+	tp_pool = (struct tracept *) MALLOC(tp_pool_mem_size);
+	tp_pool_copy = (struct tracept *) MALLOC(tp_pool_mem_size);
 	vsprint_buffer = (struct vspb_container *) MALLOC(max_threads * sizeof(struct vspb_container));
 
 
@@ -701,7 +822,7 @@ runtrace_reconfigure(int nr_of_threads, int const pool_size)
 			FREE(vsprint_buffer); vsprint_buffer = NULL;
 		}
 
-		RT_DISABLING_ERR("Cannot allocate %d bytes for tracepoint pool and its copy buffer", tp_pool_mem_size);
+		RT_DISABLING_ERR("Cannot allocate %d bytes for tracept pool and its copy buffer", tp_pool_mem_size);
 		return -1;
 	}
 
@@ -745,7 +866,7 @@ runtrace_init(int const nr_of_threads)
 	int pool_size = RT_POOL_SIZE_DFLT;
 
 
-	ATOMIC_SET(curr_tp, -1);
+	ATOMIC_SET(next_tp, 0);
 	nr_cpus = NR_CPUS;
 
 	environment_check(&pool_size);
@@ -765,8 +886,10 @@ runtrace_init(int const nr_of_threads)
 	}
 	major_number = MAJOR(dev);
 	cdev_init(&cdev, &cdev_fops);
-	// cdev.owner = THIS_MODULE;
-	
+#ifdef MODULE
+	cdev.owner = THIS_MODULE;
+#endif
+
 	if (cdev_add(&cdev, MKDEV(major_number, 0), 1)) {
 		RT_DISABLING_ERR("Can't add chrdev %d:0\n", major_number);
 		return -1;
@@ -826,17 +949,17 @@ runtrace_exit(void)
 
 
 /**
- * User API function make_tracepoint()
- * Creates a tracepoint. This is multithread safe and can be called from interrupt context.
+ * User API function make_tracept()
+ * Creates a tracept. This is multithread safe and can be called from interrupt context.
  *
- * Several instances of make_tracepoint can run parallel in read lock protected section.
- * The only critical data, curr_tp, is read and incremented atomically.
+ * Several instances of make_tracept can run parallel in read lock protected section.
+ * The only critical data, next_tp, is read and incremented atomically.
  *
  * line
  *   Line number of the calling context.
  * src
  *   File or function name of the calling context. MUST BE of 'char const' type and
- *   MUST BE available for the whole life time of tracepoint facility. F.ex. precompiler
+ *   MUST BE available for the whole life time of tracept facility. F.ex. precompiler
  *   macros __FILE__ and __FUNCTION__ will do nicely.
  * msg
  *   Ptr to a buffer ending on null-terminated string containing RT_MSG_MAX characters
@@ -844,13 +967,13 @@ runtrace_exit(void)
 */
 
 void
-make_tracepoint(int const line, char const *const src, char const *const msg)
+make_tracept(int const line, char const *const src, char const *const msg)
 {
-	struct tracepoint *tp;
+	struct tracept *tp;
 
 
 	if (!tp_pool) {
-		RT_DISABLING_ERR("You did not call init_tracepoints()\n");
+		RT_DISABLING_ERR("You did not call init_tracepts()\n");
 		// When in kernel, try to initialise runtrace facility().
 		// Userspace app calls abort() in DISABLING_ERR
 		runtrace_init(1);
@@ -859,11 +982,11 @@ make_tracepoint(int const line, char const *const src, char const *const msg)
 
 	RDLOCK(print_rwlock);
 
-	// Although multiple threads run parallel in read lock protected section, the curr_tp
+	// Although multiple threads run parallel in read lock protected section, the next_tp
 	// incrementation must be guarded against printing function. 
 	// Printing function calls invokes write lock to prevent other threads from changing 
-	// contents of the tracepoint buffer and the curr_tp variable.
-	tp = tp_pool + (tp_cnt_mask & ATOMIC_INC_RET(curr_tp));
+	// contents of the tracept buffer and the next_tp variable.
+	tp = tp_pool + (tp_cnt_mask & ATOMIC_RET_INC(next_tp));
 
 	GETTIMEOFDAY(&tp->time);
 	tp->line = line;
@@ -875,18 +998,20 @@ make_tracepoint(int const line, char const *const src, char const *const msg)
 		strncpy(tp->msg, msg, RT_MSG_MAX);
 
 	RDUNLOCK(print_rwlock);
+
+	wake_up_interruptible(&read_queue);
 }
 
 
 /**
- * User API function print_tracepoint()
+ * User API function print_tracept()
  *
  * line, src
- *   See make_tracepoint()
+ *   See make_tracept()
  * fmt
  *   Printf-style format string
  *
- * This is a convenience printing function that calls make_tracepoint() with
+ * This is a convenience printing function that calls make_tracept() with
  * format string printed out.
  *
  * For details about vsnprintf buffer rotation, see struct vspb_container.
@@ -902,7 +1027,7 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 
 
 	if (!vsprint_buffer) {
-		RT_DISABLING_ERR("You did not call init_tracepoints()\n");
+		RT_DISABLING_ERR("You did not call init_tracepts()\n");
 		// When in kernel, try to initialise runtrace facility().
 		// Userspace app calls abort() in DISABLING_ERR
 		runtrace_init(1);
@@ -910,7 +1035,7 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 
 
 	if (!fmt) {
-		make_tracepoint(line, src, NULL);	
+		make_tracept(line, src, NULL);	
 		return 0;
 	}
 
@@ -929,7 +1054,7 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 				sched_yield();
 			}
 #endif
-			
+
 			vspb_underrun_notice = 1;
 		}
 	}
@@ -937,7 +1062,7 @@ tpprintf(int line, char const *src, char const *fmt, ...)
 	va_start (args, fmt);
 	printed = vsnprintf(container->buf, RT_MSG_MAX, fmt, args);
 	
-	make_tracepoint(line, src, container->buf);
+	make_tracept(line, src, container->buf);
 	ATOMIC_CLEAR(container->in_use);
 
 	va_end(args);
