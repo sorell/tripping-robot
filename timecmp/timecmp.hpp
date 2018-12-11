@@ -24,6 +24,10 @@
 */
 
 
+/**
+ * A helper template for RollingTime.
+ * Helps RollingTime to be typed by the timer variable's size.
+ */
 namespace RollingTime_Helper {
 
 	template<bool> struct Range;
@@ -54,14 +58,21 @@ namespace RollingTime_Helper {
 }
 
 
+/**
+ * A rolling time class.
+ * The timer variable can be of any size from (theoretical) 1 bit up to 64 bits.
+ * The timestamp rolls over when its largest value is incremented.
+ * F.ex. when 10 bit timer with value 0x3FF is incremented by 2 it gets value 0x001, and
+ * value 0x001 still compares 'is greater' than 0x3FF.
+ */
 template <int TIMEBITS>
 class RollingTime
 {
 public:
 	typedef typename RollingTime_Helper::TimeParam<TIMEBITS>::type Type;
-	int const timebits = TIMEBITS;
-	Type const msb = static_cast<Type>(1) << (TIMEBITS - 1);
-	Type const max = ((msb - 1) << 1) + 1;
+	static int const timebits = TIMEBITS;
+	static Type const msb = static_cast<Type>(1) << (TIMEBITS - 1);
+	static Type const max = ((msb - 1) << 1) + 1;
 	
 	
 	RollingTime() : time_(0) 

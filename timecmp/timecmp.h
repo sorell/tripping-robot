@@ -22,33 +22,44 @@
 */
 
 
+/**
+ * For a given mask, return a word that has only the mask's msb as 1.
+ * F.ex. if mask = 0x7FFF, return 0x4000.
+ */
 __attribute__((always_inline)) static inline uint32_t
 maskMsb(uint32_t const mask)
 {
-	// Test that mask is continuous
 	if (((mask + 1) & mask) != 0) {
-		abort();  // Or your choise of method
+		abort();  // Or your method of choice
 	}
 	return ((mask >> 1) + 1);
 }
 
 
+/**
+ * For a given mask, return a word that has only the mask's msb as 1.
+ * F.ex. if mask = 0x7FFF, return 0x4000.
+ */
 __attribute__((always_inline)) static inline uint64_t
 maskMsb64(uint64_t const mask)
 {
-	// Test that mask is continuous
 	if (((mask + 1) & mask) != 0) {
-		abort();  // Or your choise of method
+		abort();  // Or your method of choice
 	}
 	return ((mask >> 1) + 1);
 }
 
 
+/**
+ * Timestamp comparison functions for 32 and 64 bit words.
+ * These can be optimized further by #defining timeMax and removing its variable from the function call.
+ */
 __attribute__((always_inline)) static inline int
 timeIsAfter(uint32_t const a, uint32_t const b, uint32_t const timeMax)
 {
 	return ((b - a) & timeMax) > maskMsb(timeMax);
 }
+
 
 __attribute__((always_inline)) static inline int
 timeIsBefore(uint32_t const a, uint32_t const b, uint32_t const timeMax)

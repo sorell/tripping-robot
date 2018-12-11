@@ -15,6 +15,12 @@ Memleak is a utility to keep track of memory allocation and deallocation. This
 tool is written to replace dmalloc where it can't or is not feasible to use in.
 Memleak comes with fewer features and a lot smaller CPU load.
 
+obscurestr
+----------
+Let compiler obscure text strings so that they're hard to trace from binary
+file.
+A header-only implementation. Requires c++14, could be modified to compile on c++11.
+
 runtrace
 --------
 Runtrace facility is for tracing your application's execution. You can place 
@@ -30,3 +36,8 @@ stopwatch
 Stopwatch is a very simple tool for tracking time.
 All code resides in one header file, which has convenience macros for 
 operations.
+
+timecmp
+-------
+Timecmp is a utility to compare timestamps that can roll over.
+There're C-style and C++-style implementations.
