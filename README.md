@@ -7,8 +7,6 @@ level of configuration possibilities and documentation is not on par with well
 maintained apps. However, I distribute them for free in hopes that somebody 
 finds them beneficial.
 
-Every utility is designed to be thread-safe.
-
 memleak
 -------
 Memleak is a utility to keep track of memory allocation and deallocation. This
