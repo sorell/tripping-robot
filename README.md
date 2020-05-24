@@ -19,7 +19,7 @@ obscurestr
 ----------
 Let compiler obscure text strings so that they're hard to trace from binary
 file.
-A header-only implementation. Requires c++14, could be modified to compile on c++11.
+A header-only implementation. Requires c++14.
 
 runtrace
 --------
@@ -40,4 +40,4 @@ operations.
 timecmp
 -------
 Timecmp is a utility to compare timestamps that can roll over.
-There're C-style and C++-style implementations.
+There're C-style and C++-style implementations. Supports timers uneven to 8 bits.
