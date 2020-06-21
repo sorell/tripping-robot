@@ -49,7 +49,7 @@
 // Park-Miller 31 bit pseudo-random number generator, implemented with G. Carta's optimisation:
 // with 32-bit math and without division
 
-namespace ssns_obscurestr {
+namespace ss_obscurestr {
 
 template <int N>
 struct MetaRandomGenerator
@@ -107,23 +107,24 @@ template <typename KEY, size_t ...IS>
 class ObscureStr<KEY, std::index_sequence<IS...>>
 {
 public:
-    constexpr __attribute__((always_inline)) ObscureStr(char const *str) : str_{ obscure(str[IS], ByteShifter<KEY::value, IS>::byte)... } { 
-        // A modern enough gcc allows constexpr ctor to have a function body. (5.x will do, 4.x not so much).
-        // Calling decrypt() here removes the need of .decrypt() in obscure_str().
-        // deobscure(KEY::value, str_, sizeof...(Is));
+    // A modern enough gcc allows constexpr ctor to have a function body. (5.x will do, 4.x not so much).
+    constexpr __attribute__((always_inline))
+    ObscureStr(char const *str) : str_{ obscure(str[IS], ByteShifter<KEY::value, IS>::byte)... } { 
     }
 
     char const *c_str(void) const { return str_; }
 
-    ObscureStr<KEY, std::index_sequence<IS...>> &deobscure(void) { ssns_obscurestr::deobscure(KEY::value, str_, sizeof...(IS)); return *this; }
+    ObscureStr<KEY, std::index_sequence<IS...>> constexpr &deobscure(void) {
+        ss_obscurestr::deobscure(KEY::value, str_, sizeof...(IS)); return *this; 
+    }
 
 private:
-    inline char constexpr obscure(char const ch, size_t const conversion_key) const { return ch ^ conversion_key; }
+    inline char constexpr obscure(char const ch, unsigned int const conversion_key) const { return ch ^ conversion_key; }
 
     char str_[sizeof...(IS)];
 };
 
-}  // namespace ssns_obscurestr
+}  // namespace ss_obscurestr
 
 
 // Creator helper function.
@@ -132,7 +133,7 @@ template <typename STR, size_t SIZE>
 __attribute__((always_inline))
 char const constexpr *obscureStr(STR const (&str)[SIZE])
 {
-    return ssns_obscurestr::ObscureStr<ssns_obscurestr::MetaRandomGenerator<__COUNTER__>, std::make_index_sequence<SIZE>>(str).deobscure().c_str();
+    return ss_obscurestr::ObscureStr<ss_obscurestr::MetaRandomGenerator<__COUNTER__>, std::make_index_sequence<SIZE>>(str).deobscure().c_str();
 }
 
 #endif  // OBSCURESTR_HPP_HEADER

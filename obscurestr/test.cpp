@@ -19,20 +19,20 @@
 
 void test(void)
 {
-    static char const *const staticText = obscureStr("Static variable");
-    char const *const stackText = obscureStr("Variable from stack");
-    std::string stdStr(obscureStr("std::string also works, why wouldn't it?"));
+    static char const *const staticText = obscureStr("ObscureStr as a static variable");
+    char const *const stackText = obscureStr("ObscureStr from stack");
+    std::string stdStr(obscureStr("ObscureStr to std::string"));
     
-    printf("%s, %s\n", stackText, staticText);
+    printf("%s\n%s\n", stackText, staticText);
     printf("%s\n", stdStr.c_str());
-    std::cout << obscureStr("Text to cout") << std::endl;
-    printf("\n");
+    std::cout << obscureStr("ObscureStr to cout") << std::endl;
 }
 
 
 int main(void)
 {
     test();
-    test();  // Test again to see that the strings are not de-obscured twice
+    printf("Test again to prove that the static strings are not de-obscured twice\n");
+    test();
     return 0;
 }

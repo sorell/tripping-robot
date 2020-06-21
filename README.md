@@ -7,6 +7,10 @@ level of configuration possibilities and documentation is not on par with well
 maintained apps. However, I distribute them for free in hopes that somebody 
 finds them beneficial.
 
+mallocoverload
+--------------
+A simple example how to overload malloc and free in C++ code.
+
 memleak
 -------
 Memleak is a utility to keep track of memory allocation and deallocation. This
@@ -15,8 +19,7 @@ Memleak comes with fewer features and a lot smaller CPU load.
 
 obscurestr
 ----------
-Let compiler obscure text strings so that they're hard to trace from binary
-file.
+Let compiler obscure text strings so they're hard to trace from binary file.
 A header-only implementation. Requires c++14.
 
 runtrace
@@ -39,3 +42,7 @@ timecmp
 -------
 Timecmp is a utility to compare timestamps that can roll over.
 There're C-style and C++-style implementations. Supports timers uneven to 8 bits.
+
+wait4crash
+----------
+A simple shell script that repeatedly starts and kills an application until it crashes.
